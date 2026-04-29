@@ -3,7 +3,7 @@ class CaseInsensitiveDict(dict):
         super().__init__()
         if data:
             for key, value in data.items():
-                self[key] = value  # routes through your __setitem__
+                self[key] = value  # routes through __setitem__
 
     def __setitem__(self, key, value):
         super().__setitem__(key.upper(), value)
