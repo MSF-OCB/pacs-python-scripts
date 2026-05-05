@@ -160,6 +160,7 @@ def main_orthanc():
 
     if not new_instances:
         print("No new instances to process. Exiting.")
+        save_offset(ORTHANC_URL, since + len(instances))
         return
     print(f"Found {len(new_instances)} new instances to process")
      
@@ -167,6 +168,7 @@ def main_orthanc():
     df = build_dataframe(new_instances)
     if df is None or df.empty:
         print("No valid data extracted from instances. Exiting.")
+        save_offset(ORTHANC_URL, since + len(instances))
         return
 
     # 4. Filter out Modality that are XR, these need to be added to the excel (df_DM). To the log file, we do add all instances, even those that are not XR, because we want to keep track of which ones we have processed, and we don't want to process them again in the future (df).
@@ -174,6 +176,7 @@ def main_orthanc():
     if df_DM.empty:
         print("No new XR instances to process. Exiting.")
         append_to_log(df["InstanceID"].tolist(), LOG_FILE) # But still add all instance IDs to the log, so we don't process them again in the future
+        save_offset(ORTHANC_URL, since + len(instances))
         return
 
     # 5. Quarantine files that cannot be processed
@@ -190,6 +193,7 @@ def main_orthanc():
     if df_DM.empty:
         print("All new XR instances are missing required fields. Exiting.")
         append_to_log(df["InstanceID"].tolist(), LOG_FILE) # But still add all instance IDs to the log, so we don't process them again in the future
+        save_offset(ORTHANC_URL, since + len(instances))
         return
   
     # 6. Add TEI_MSF, DI_MSF, and DI_MSF_Category
