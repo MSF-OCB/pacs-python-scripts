@@ -1,0 +1,12 @@
+# Secrets
+.env
+
+# Logs
+*.txt
+
+# Excel files
+*.xlsx
+*.xls
+
+# Offset
+offset.json
