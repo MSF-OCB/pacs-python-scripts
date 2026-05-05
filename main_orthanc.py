@@ -1,3 +1,4 @@
+import json
 import os
 from urllib import response
 import requests
@@ -5,13 +6,35 @@ from datetime import datetime, timedelta
 import pandas as pd
 import time
 from add_TEI_DI import add_TEI_DI
+from dotenv import load_dotenv
 
-ORTHANC_URL = "https://pacs.be452.ocb.msf.org"  # "https://demo.orthanc-server.com"
-#ORTHANC_URL = "https://demo.orthanc-server.com"  # For testing, use the public demo server, which has no auth and is reset every hour, so we can test without worrying about credentials or data persistence. Later replace by the actual URL when we have it working.
-AUTH = ("michelle","OrthM757@") # Not very nice but for testing OK
-API_KEY = "JtqW9DJNvDhHiffx" 
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
+ORTHANC_URL = os.getenv("ORTHANC_URL")
+API_USERNAME = os.getenv("API_USERNAME")
+API_PASSWORD = os.getenv("API_PASSWORD")
+API_USER = (API_USERNAME, API_PASSWORD)
 EXCEL_FILE = "dose_data.xlsx"
-LOG_FILE = "orthanc_dosemonitoring_log.txt"
+LOG_FILE = "orthanc_dosemonitoring.log"
+BATCH_SIZE = 500
+OFFSET_FILE = "offset.json"
+
+
+def load_offset(url):
+    if os.path.exists(OFFSET_FILE):
+        with open(OFFSET_FILE, "r") as f:
+            offsets = json.load(f)
+            return offsets.get(url, 0)  # return 0 if this URL is new
+    return 0
+
+def save_offset(url, since):
+    offsets = {}
+    if os.path.exists(OFFSET_FILE):
+        with open(OFFSET_FILE, "r") as f:
+            offsets = json.load(f)
+    offsets[url] = since
+    with open(OFFSET_FILE, "w") as f:
+        json.dump(offsets, f, indent=2)
 
 def get_existing_instance_ids(log_path:str) -> set:
    """Read the log file and return a set of already-processed instance IDs."""
@@ -20,12 +43,13 @@ def get_existing_instance_ids(log_path:str) -> set:
    with open(log_path, "r") as f:
         return set(line.strip() for line in f if line.strip())
    
-def get_all_instances():
+def get_all_instances(since=0, limit=50):
     url = f"{ORTHANC_URL}/instances"
     headers = {
         "api-key": API_KEY
     }
-    response = requests.get(url, auth=AUTH, headers=headers)
+    params = {"since": since, "limit": limit}
+    response = requests.get(url, auth=API_USER, headers=headers, params=params)
     response.raise_for_status()
     return response.json()
 
@@ -34,7 +58,7 @@ def get_instance_tags(instance_id):
     headers = {
         "api-key": API_KEY
     }
-    r = requests.get(url, auth=AUTH, headers=headers)
+    r = requests.get(url, auth=API_USER, headers=headers)
     r.raise_for_status()
     return r.json()
 
@@ -97,19 +121,22 @@ def append_to_excel(df_new: pd.DataFrame, excel_path: str):
 def append_to_log(instance_ids: list, log_path: str):
     """Append new instance IDs to the log file."""
     with open(log_path, "a") as f:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"----- {timestamp} -----\n")
         for id_ in instance_ids:
             f.write(f"{id_}\n")
 
 def main_orthanc():
 
-    #0. Check which URL is used for Orthanc, some issue here, so debugging
-    print("Using URL:", ORTHANC_URL)
+    #0. Give some information on what we are going to do
+    print("Start processing instances using URL:", ORTHANC_URL)
     
     # 1. Get all instances
-    instances = get_all_instances() # Later replace by filter to get only recent XRays
+    since = load_offset(ORTHANC_URL)
+    instances = get_all_instances(since=since, limit=BATCH_SIZE) # Later replace by filter to get only recent XRays
     print(f"Found {len(instances)} instances in the database")
 
-    # 2. Filter to instances that are not in Excel yet, by comparing to the log file of already-processed instance IDs. This way we can run the script multiple times without worrying about duplicates, and we can also process only new instances that have been added since the last run.
+    # 2. Filter to instances that are not in Excel yet, by comparing to the log file of already-processed instance IDs. This way we can process only new instances that have been added since the last run.
     existing_ids = get_existing_instance_ids(LOG_FILE)
     new_instances = [inst for inst in instances if inst not in existing_ids]
 
@@ -131,12 +158,16 @@ def main_orthanc():
         append_to_log(df["InstanceID"].tolist(), LOG_FILE) # But still add all instance IDs to the log, so we don't process them again in the future
         return
 
-    # 4. Add TEI_MSF, DI_MSF, and DI_MSF_Category
+    # 5. Add TEI_MSF, DI_MSF, and DI_MSF_Category
     df_DM = add_TEI_DI(df_DM)
 
-    # 5. Append to Excel and log file
+    # 6. Append to Excel and log file
     append_to_excel(df_DM, EXCEL_FILE)
     append_to_log(df["InstanceID"].tolist(), LOG_FILE)
+
+    # 7. Save the offset for the next run
+    save_offset(ORTHANC_URL, since + len(instances))
+    print(f"Done. Next run will start from {since + len(instances)}.")
 
 if __name__ == "__main__":
     main_orthanc()
