@@ -7,6 +7,7 @@ import pandas as pd
 import time
 from add_TEI_DI import add_TEI_DI
 from dotenv import load_dotenv
+import tempfile, shutil
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
@@ -16,7 +17,8 @@ API_PASSWORD = os.getenv("API_PASSWORD")
 API_USER = (API_USERNAME, API_PASSWORD)
 EXCEL_FILE = "dose_data.xlsx"
 LOG_FILE = "orthanc_dosemonitoring.log"
-BATCH_SIZE = 500
+QUARANTINE_LOG_FILE = "quarantined_files.log"
+BATCH_SIZE = 50
 OFFSET_FILE = "offset.json"
 
 
@@ -52,6 +54,7 @@ def get_all_instances(since=0, limit=50):
     response = requests.get(url, auth=API_USER, headers=headers, params=params)
     response.raise_for_status()
     return response.json()
+
 
 def get_instance_tags(instance_id):
     url = f"{ORTHANC_URL}/instances/{instance_id}/simplified-tags"
@@ -115,7 +118,14 @@ def append_to_excel(df_new: pd.DataFrame, excel_path: str):
         df_combined = pd.concat([df_existing, df_new], ignore_index=True)
     else:
         df_combined = df_new
-    df_combined.to_excel(excel_path, index=False)
+
+    # Write to a temp file first, then replace the real file only if writing succeeded
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp_path = tmp.name
+
+    df_combined.to_excel(tmp_path, index=False)
+    shutil.move(tmp_path, excel_path)
+
     print(f"Excel updated: {len(df_combined)} total rows ({len(df_new)} new)")
 
 def append_to_log(instance_ids: list, log_path: str):
@@ -123,6 +133,14 @@ def append_to_log(instance_ids: list, log_path: str):
     with open(log_path, "a") as f:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         f.write(f"----- {timestamp} -----\n")
+        for id_ in instance_ids:
+            f.write(f"{id_}\n")
+
+def append_quarantined_to_log(instance_ids: list, log_path: str):
+    """Append quarantined instance IDs to the log file."""
+    with open(log_path, "a") as f:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"----- Quarantined: {timestamp} -----\n")
         for id_ in instance_ids:
             f.write(f"{id_}\n")
 
@@ -134,7 +152,7 @@ def main_orthanc():
     # 1. Get all instances
     since = load_offset(ORTHANC_URL)
     instances = get_all_instances(since=since, limit=BATCH_SIZE) # Later replace by filter to get only recent XRays
-    print(f"Found {len(instances)} instances in the database")
+    print(f"Found {len(instances)} instances in the database since offset {since}.")
 
     # 2. Filter to instances that are not in logs yet, by comparing to the log file of already-processed instance IDs. This way we can process only new instances that have been added since the last run.
     existing_ids = get_existing_instance_ids(LOG_FILE)
@@ -158,16 +176,34 @@ def main_orthanc():
         append_to_log(df["InstanceID"].tolist(), LOG_FILE) # But still add all instance IDs to the log, so we don't process them again in the future
         return
 
-    # 5. Add TEI_MSF, DI_MSF, and DI_MSF_Category
+    # 5. Quarantine files that cannot be processed
+    # No modality, BodyPartExamined, or ExposureIndex: These are essential for our analysis, so we cannot process these instances. We will log them and skip them.
+    missing_modality = df_DM["Modality"].isnull()
+    missing_bodypart = df_DM["BodyPartExamined"].isnull()
+    missing_exposure = df_DM["ExposureIndex"].isnull()
+    if missing_modality.any() or missing_bodypart.any() or missing_exposure.any():
+        print("Warning: Some instances are missing Modality, BodyPartExamined, or ExposureIndex. These will be skipped.")
+        to_quarantine = df_DM[missing_modality | missing_bodypart | missing_exposure]
+        df_DM = df_DM[~(missing_modality | missing_bodypart | missing_exposure)] # Keep only those that have all required fields
+        df = df[~(missing_modality | missing_bodypart | missing_exposure)] # Also remove from the main df, so they are not logged as processed, since we are skipping them
+        append_quarantined_to_log(to_quarantine["InstanceID"].tolist(), QUARANTINE_LOG_FILE)  
+    if df_DM.empty:
+        print("All new XR instances are missing required fields. Exiting.")
+        append_to_log(df["InstanceID"].tolist(), LOG_FILE) # But still add all instance IDs to the log, so we don't process them again in the future
+        return
+  
+    # 6. Add TEI_MSF, DI_MSF, and DI_MSF_Category
     df_DM = add_TEI_DI(df_DM)
 
-    # 6. Append to Excel and log file
+    # 7. Append to Excel and log file
     append_to_excel(df_DM, EXCEL_FILE) #df_DM because we only want to add the XRays to the Excel file
     append_to_log(df["InstanceID"].tolist(), LOG_FILE) #df because we want to log all processed instances, even those that are not XRays, so we don't process them again in the future
 
-    # 7. Save the offset for the next run
+    # 8. Save the offset for the next run
     save_offset(ORTHANC_URL, since + len(instances))
     print(f"Done. Next run will start from {since + len(instances)}.")
+    if missing_modality.any() or missing_bodypart.any() or missing_exposure.any():
+        print(f"Warning: There were quarantined instances due to missing required fields, they will not be processed again! Check {QUARANTINE_LOG_FILE} for details.")
 
 if __name__ == "__main__":
     main_orthanc()

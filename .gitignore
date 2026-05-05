@@ -2,7 +2,8 @@
 .env
 
 # Logs
-*.txt
+*.log
+
 
 # Excel files
 *.xlsx
