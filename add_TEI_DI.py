@@ -11,12 +11,7 @@ def add_TEI_DI(df):
         print("Warning: Some BodyPartExamined values are missing. Setting them to 'CHEST*' by default.")
         df["BodyPartExamined"] = df["BodyPartExamined"].fillna("CHEST*")
    
-    # For now, since in our testdata ExposureIndex is not provided, set ExposureIndex to random values between 50 and 1000
-    if df["ExposureIndex"].isnull().any():
-        print("Warning: Some ExposureIndex values are missing. Setting them to random values between 50 and 1000 for testing purposes.")
-        df["ExposureIndex"] = df["ExposureIndex"].fillna(pd.Series(np.random.randint(50, 1000, size=len(df))))
-   
-    # Add TEI_MSF, since TargetExposureIndex is not always set correctly and/or provided
+    # Add TEI_MSF, since TargetExposureIndex is not always set correctly and/or provided we have our own TEI
     df["TEI_MSF"] = df["BodyPartExamined"].map(TEI_MSF_LOOKUP.get) #.get to return NaN for missing values instead of raising an error
 
     # First compute DI (with TargetExposureIndex from DicomFiles), but only when both ExposureIndex and TargetExposureIndex are >0, otherwise set to NaN

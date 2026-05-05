@@ -79,7 +79,7 @@ def extract_relevant_dicomtags(tags):
     
     return {
         "SOPInstanceUID": safe_get(tags, "SOPInstanceUID"),
-        "InstitutionName": safe_get(tags, "InstitutionName"),
+        "InstitutionName": safe_get(tags, "InstitutionName") or ORTHANC_URL,
         "AcquisitionDate": pd.to_datetime(acquisition_date, format='%Y%m%d', errors='coerce'),
         "PatientBirthDate": safe_get(tags, "PatientBirthDate"),
         "Modality": safe_get(tags, "Modality"),
@@ -136,7 +136,7 @@ def main_orthanc():
     instances = get_all_instances(since=since, limit=BATCH_SIZE) # Later replace by filter to get only recent XRays
     print(f"Found {len(instances)} instances in the database")
 
-    # 2. Filter to instances that are not in Excel yet, by comparing to the log file of already-processed instance IDs. This way we can process only new instances that have been added since the last run.
+    # 2. Filter to instances that are not in logs yet, by comparing to the log file of already-processed instance IDs. This way we can process only new instances that have been added since the last run.
     existing_ids = get_existing_instance_ids(LOG_FILE)
     new_instances = [inst for inst in instances if inst not in existing_ids]
 
@@ -145,7 +145,7 @@ def main_orthanc():
         return
     print(f"Found {len(new_instances)} new instances to process")
      
-    # 3. Build dataframe with relevant tags, I removed the limit...
+    # 3. Build dataframe with relevant tags
     df = build_dataframe(new_instances)
     if df is None or df.empty:
         print("No valid data extracted from instances. Exiting.")
@@ -162,8 +162,8 @@ def main_orthanc():
     df_DM = add_TEI_DI(df_DM)
 
     # 6. Append to Excel and log file
-    append_to_excel(df_DM, EXCEL_FILE)
-    append_to_log(df["InstanceID"].tolist(), LOG_FILE)
+    append_to_excel(df_DM, EXCEL_FILE) #df_DM because we only want to add the XRays to the Excel file
+    append_to_log(df["InstanceID"].tolist(), LOG_FILE) #df because we want to log all processed instances, even those that are not XRays, so we don't process them again in the future
 
     # 7. Save the offset for the next run
     save_offset(ORTHANC_URL, since + len(instances))
