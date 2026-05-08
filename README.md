@@ -24,14 +24,14 @@ BATCH_SIZE = 50
 python main_orthanc.py
 
 Summary of steps taken by the code:
-1. Get all instances in the database.
-2. Filter to instances that are not in logs yet.
+1. Get all instances in the database, but max BATCH_SIZE. If any errors occur, send to quarantine. If you get anything other than 200, send it to quarantine. Use a while loop here.
+2. Filter out instances that are logs already.
 3. Build dataframe with relevant tags. Every row is an instance.
 4. Filter out Modality that are XR: Only Modalities "DX" "CR" are added to the Excel. Other modalities are added to the log files, such that they are not processed in the future. 
-5. Quarantine files that cannot be processed because modality, BodyPartExamined, or ExposureIndex is missing
+5. Quarantine files that cannot be processed because Modality, BodyPartExamined, or ExposureIndex is missing. Or any other issues occured during processing, also send to quarantine. Use sleep 2. Already stored, also add to quarantine.
 6. Add TEI_MSF, DI_MSF, and DI_MSF_Category.
 7. Append to Excel and log file.
-8. Save the offset for the next run - Offset is per OrthancUrl, so a different OrthancUrl will start at a different offset.
+8. Go to next iteration in the while loop
 
 ## Run time files
 - `dose_data.xlsx` - Every row is an X-ray instance, with relevant DicomTags and DI, TEI
