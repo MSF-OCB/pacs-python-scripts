@@ -45,3 +45,4 @@ Summary of steps taken by the code:
 
 ## TO DO
 - num_quarantined is not updated correctly within certain functions
+- If we switch to get_recent_instances, I have to adjust the way we quit the while loop. 

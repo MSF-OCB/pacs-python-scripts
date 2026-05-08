@@ -18,7 +18,8 @@ API_USER = (API_USERNAME, API_PASSWORD)
 EXCEL_FILE = "dose_data.xlsx"
 LOG_FILE_SUCCESS = "succesfull_instances.log"
 LOG_FILE_QUARANTINE = "quarantined_instances.log"
-BATCH_SIZE = 5
+BATCH_SIZE = 50
+SEARCH_DAYS = 1000 # Number of days back to look for new instances, if we want to filter to recent instances. We will do client-side filtering based on the AcquisitionDate in the DICOM tags, since not all instances have a date in the MainDicomTags that we can use for server-side filtering in the API call.
 
 
 # Define functions to interact with Orthanc API, process the data, and manage logs and Excel file
@@ -56,8 +57,15 @@ def get_recent_instances(cutoff_date: str, since: int = 0, limit: int = 50, max_
             recent_ids = [
                 i["ID"] for i in instances
                 if i.get("MainDicomTags", {}).get("InstanceCreationDate") is not None
-                and i["MainDicomTags"]["InstanceCreationDate"] >= cutoff_date
+                and i["MainDicomTags"]["InstanceCreationDate"]>= cutoff_date
             ]
+            # Send to quarantine if InstanceCreationDate is missing, since we cannot determine if they are recent or not
+            missing_date_ids = [
+                i["ID"] for i in instances
+                if i.get("MainDicomTags", {}).get("InstanceCreationDate") is None
+            ]
+            if missing_date_ids:
+                add_to_quarantine(missing_date_ids, LOG_FILE_QUARANTINE)
             return recent_ids
         if attempt < max_retries:
             time.sleep(2)
@@ -192,7 +200,7 @@ def main_orthanc():
     num_instances_found = 0
 
     # Test get_recent_studies function with a cutoff date of 3 years ago
-    cutoff_date = (datetime.now() - timedelta(days=10000)).strftime("%Y%m%d") # For testing purposes, set cutoff date to a very old date to get all instances
+    cutoff_date = (datetime.now() - timedelta(days=SEARCH_DAYS)).strftime("%Y%m%d") # For testing purposes, set cutoff date to a very old date to get all instances
   
     while True:
         # 1. Get all instances
