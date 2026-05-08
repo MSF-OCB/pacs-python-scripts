@@ -11,13 +11,14 @@ pip install -r requirements.txt
 1. .env
 cp .env.example .env
 fill it:
-API_KEY = "yourOrthancAPIKey"
+API_KEY = "yourOrthancAPIKey" --> Is optional, {} is passed if it does not exist.
 ORTHANC_URL = "yourOrthancUrl" 
 API_USERNAME = "yourUsername"
 API_PASSWORD = "yourPassword"
 2. HardCoded in main_orthanc.py
 EXCEL_FILE = "dose_data.xlsx"
-LOG_FILE = "orthanc_dosemonitoring.log"
+LOG_FILE_SUCCESS = "succesfull_instances.log"
+LOG_FILE_QUARANTINE = "quarantined_instances.log"
 BATCH_SIZE = 50
 
 ## Usage
@@ -35,11 +36,12 @@ Summary of steps taken by the code:
 
 ## Run time files
 - `dose_data.xlsx` - Every row is an X-ray instance, with relevant DicomTags and DI, TEI
-- `orthanc_dosemonitoring.log` - A list of Instances that have already been processed
-- `offset.json` -tracks how many DICOM instances have been processed. 
-  Auto-created on first run.
+- `succesfull_instances.log` - A list of Instances that have already been processed
+- `quarantined_instances.log` - A list of Instances that were found in the database but could not be processed
 
 ## Error handling and management of the script
 - If TEI does not exist in the DicomTags, no DI is calculated for this instance. 
-- If InstitutionName is empty, the ORTHANC_URL will be added here instead
-- Note that you can manually set offset.json to 0 if you want to process the whole database again. It will not create double entries in the Excel, since the log files are scanned for the InstanceIDs that have already been processed.
+- If InstitutionName is empty, the ORTHANC_URL will be added here instead.
+
+## TO DO
+- num_quarantined is not updated correctly within certain functions
