@@ -5,11 +5,6 @@ import numpy as np
 
 
 def add_TEI_DI(df):
-
-    # First set BodyPartExamined to default "Chest" if it is empty
-    if df["BodyPartExamined"].isnull().any():
-        print("Warning: Some BodyPartExamined values are missing. Setting them to 'CHEST*' by default.")
-        df["BodyPartExamined"] = df["BodyPartExamined"].fillna("CHEST*")
    
     # Add TEI_MSF, since TargetExposureIndex is not always set correctly and/or provided we have our own TEI
     df["TEI_MSF"] = df["BodyPartExamined"].map(TEI_MSF_LOOKUP.get) #.get to return NaN for missing values instead of raising an error
